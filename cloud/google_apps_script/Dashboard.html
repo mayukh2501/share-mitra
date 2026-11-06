@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SHRAM MITRA Attendance</title>
+  <style>
+    :root {
+      --ink: #172033;
+      --muted: #667085;
+      --line: #e5e9f0;
+      --surface: #ffffff;
+      --background: #f4f6fa;
+      --accent: #2457d6;
+      --green: #16845b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 28px;
+      font-family: Inter, Arial, sans-serif;
+      color: var(--ink);
+      background: var(--background);
+    }
+    .wrap { max-width: 1180px; margin: auto; }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+      margin-bottom: 24px;
+    }
+    h1 { margin: 0; font-size: 28px; letter-spacing: -0.6px; }
+    .sub { margin-top: 6px; color: var(--muted); }
+    .status {
+      background: #e8f6ef;
+      color: var(--green);
+      padding: 9px 13px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+    .stat, .panel {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 20px;
+      box-shadow: 0 4px 18px rgba(20, 32, 55, 0.04);
+    }
+    .stat-label { color: var(--muted); font-size: 13px; }
+    .stat-value { font-size: 30px; font-weight: 750; margin-top: 8px; }
+    .panel-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+    h2 { margin: 0; font-size: 18px; }
+    button {
+      border: 0;
+      border-radius: 9px;
+      background: var(--accent);
+      color: white;
+      padding: 10px 14px;
+      cursor: pointer;
+      font-weight: 650;
+    }
+    button:hover { opacity: .9; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; min-width: 720px; }
+    th, td {
+      text-align: left;
+      padding: 13px 10px;
+      border-bottom: 1px solid var(--line);
+      font-size: 13px;
+      vertical-align: middle;
+    }
+    th { color: var(--muted); font-weight: 700; }
+    .present { color: var(--green); font-weight: 700; }
+    .photo {
+      width: 64px;
+      height: 48px;
+      object-fit: cover;
+      border-radius: 7px;
+      background: #eef1f6;
+    }
+    .empty, .message { color: var(--muted); padding: 24px 8px; text-align: center; }
+    .error { color: #b42318; }
+    footer { color: var(--muted); font-size: 12px; margin-top: 16px; }
+    @media (max-width: 700px) {
+      body { padding: 16px; }
+      .stats { grid-template-columns: 1fr; }
+      h1 { font-size: 23px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <header>
+      <div>
+        <h1>SHRAM MITRA</h1>
+        <div class="sub">Smart Autonomous Assistance Robot · Attendance Dashboard</div>
+      </div>
+      <div class="status" id="connection">Connecting…</div>
+    </header>
+
+    <section class="stats">
+      <div class="stat">
+        <div class="stat-label">Attendance records</div>
+        <div class="stat-value" id="total">—</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Present today</div>
+        <div class="stat-value" id="today">—</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Latest scan</div>
+        <div class="stat-value" id="latest" style="font-size:18px">—</div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Live attendance log</h2>
+        <button onclick="loadAttendance()">Refresh</button>
+      </div>
+      <div id="message" class="message">Loading attendance records…</div>
+      <div class="table-wrap">
+        <table id="attendanceTable" hidden>
+          <thead>
+            <tr>
+              <th>Timestamp</th>
+              <th>Student</th>
+              <th>RFID UID</th>
+              <th>Status</th>
+              <th>Photo</th>
+            </tr>
+          </thead>
+          <tbody id="attendanceBody"></tbody>
+        </table>
+      </div>
+    </section>
+    <footer>Updates automatically every 5 seconds. Images are visible only to accounts with Drive permission.</footer>
+  </main>
+
+  <script>
+    function escapeHtml(value) {
+      return String(value == null ? "" : value).replace(/[&<>"']/g, function(ch) {
+        return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch];
+      });
+    }
+
+    function loadAttendance() {
+      const message = document.getElementById("message");
+      document.getElementById("connection").textContent = "Updating…";
+      google.script.run
+        .withSuccessHandler(renderAttendance)
+        .withFailureHandler(function(error) {
+          message.textContent = "Could not load attendance: " + (error && error.message ? error.message : error);
+          message.className = "message error";
+          document.getElementById("connection").textContent = "Connection error";
+        })
+        .getAttendance();
+    }
+
+    function renderAttendance(rows) {
+      rows = Array.isArray(rows) ? rows : [];
+      const body = document.getElementById("attendanceBody");
+      const table = document.getElementById("attendanceTable");
+      const message = document.getElementById("message");
+
+      document.getElementById("total").textContent = rows.length;
+      const todayKey = new Date().toDateString();
+      const todayCount = rows.filter(function(row) {
+        const parsed = new Date(row.timestamp);
+        return !isNaN(parsed.getTime()) && parsed.toDateString() === todayKey;
+      }).length;
+      document.getElementById("today").textContent = todayCount;
+      document.getElementById("latest").textContent = rows.length ? rows[0].timestamp : "No scans yet";
+
+      if (!rows.length) {
+        table.hidden = true;
+        message.hidden = false;
+        message.textContent = "No attendance records yet. Scan an RFID card to create the first record.";
+      } else {
+        message.hidden = true;
+        table.hidden = false;
+        body.innerHTML = rows.map(function(row) {
+          const photo = row.photoUrl
+            ? '<a href="' + escapeHtml(row.photoUrl) + '" target="_blank" rel="noopener">Open photo</a>'
+            : "—";
+          return "<tr>" +
+            "<td>" + escapeHtml(row.timestamp) + "</td>" +
+            "<td>" + escapeHtml(row.studentName) + "</td>" +
+            "<td>" + escapeHtml(row.uid) + "</td>" +
+            '<td class="present">' + escapeHtml(row.status) + "</td>" +
+            "<td>" + photo + "</td>" +
+            "</tr>";
+        }).join("");
+      }
+      document.getElementById("connection").textContent = "Live · refreshed";
+    }
+
+    loadAttendance();
+    setInterval(loadAttendance, 5000);
+  </script>
+</body>
+</html>
